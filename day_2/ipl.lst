@@ -1,0 +1,111 @@
+     1                                  CYLS	EQU	10
+     2                                  [ORG 0x7c00]      ; 设置代码起始地址为0x7C00
+     3                                  
+     4 00000000 EB4E                    JMP entry         ; 跳转到entry标签
+     5 00000002 90                      NOP               ; 无操作（占位符）
+     6 00000003 48454C4C4F49504C        DB "HELLOIPL"     ; OEM名称标识符（8字节）
+     7 0000000B 0002                    DW 512            ; 每个扇区的字节数（512字节）
+     8 0000000D 01                      DB 1              ; 每簇的扇区数（1扇区/簇）
+     9 0000000E 0100                    DW 1              ; 保留扇区数（1个保留扇区）
+    10 00000010 02                      DB 2              ; FAT表数量（2个FAT表）
+    11 00000011 E000                    DW 224            ; 根目录的最大条目数（224条）
+    12 00000013 400B                    DW 2880           ; 总扇区数（小于32MB时，总扇区数为2880）
+    13 00000015 F0                      DB 0xf0           ; 媒体描述符（0xF0表示1.44MB的软盘）
+    14 00000016 0900                    DW 9              ; 每个FAT表的扇区数（9扇区）
+    15 00000018 1200                    DW 18             ; 每个磁道的扇区数（18扇区）
+    16 0000001A 0200                    DW 2              ; 磁头数（2个磁头）
+    17 0000001C 00000000                DD 0              ; 隐藏扇区数（0）
+    18 00000020 400B0000                DD 2880           ; 总扇区数（大于32MB时，总扇区数为2880）
+    19 00000024 000029                  DB 0, 0, 0x29     ; 逻辑驱动器号、保留字节、扩展引导签名（0x29）
+    20 00000027 FFFFFFFF                DD 0xffffffff     ; 卷序列号
+    21 0000002B 48454C4C4F2D4F5320-     DB "HELLO-OS   "  ; 卷标（11字节）
+    21 00000034 2020               
+    22 00000036 4641543132202020        DB "FAT12   "     ; 文件系统类型（8字节）
+    23 0000003E <res 12h>               RESB 18           ; 填充到62字节
+    23          ******************       warning: uninitialized space declared in .text section: zeroing [-w+zeroing]
+    24                                  
+    25                                  entry:
+    26 00000050 31C0                    	XOR AX, AX       ; AX寄存器清零
+    27 00000052 8ED0                    	MOV SS, AX       ; 将堆栈段寄存器设置为0
+    28 00000054 BC007C                  	MOV SP, 0x7c00   ; 将堆栈指针设置为0x7C00
+    29 00000057 8ED8                    	MOV DS, AX       ; 将数据段寄存器设置为0
+    30 00000059 8EC0                    	MOV ES, AX       ; 将附加段寄存器设置为0
+    31 0000005B BE[C700]                	MOV SI, msg      ; 将消息字符串的地址加载到SI寄存器
+    32                                  	;读磁盘
+    33 0000005E B82008                  	MOV AX, 0X0820	
+    34 00000061 8EC0                    	MOV ES, AX	
+    35 00000063 B500                    	MOV CH, 0	;柱面0
+    36 00000065 B600                    	MOV DH, 0 	;磁头0
+    37 00000067 B102                    	MOV CL, 2	;扇区2
+    38                                  
+    39                                  readloop:
+    40 00000069 BE0000                  	MOV SI, 0 ;记录失败次数的寄存器
+    41                                  retry:
+    42 0000006C B402                    	MOV AH, 0X02 ;读盘
+    43 0000006E B001                    	MOV AL, 1	;一个扇区
+    44 00000070 BB0000                  	MOV BX, 0
+    45 00000073 B200                    	MOV DL, 0X00	;a驱动器
+    46 00000075 CD13                    	INT 0x13	;调用磁盘BIOS
+    47 00000077 7310                    	JNC next
+    48                                  
+    49 00000079 83C601                  	ADD SI, 1
+    50 0000007C 83FE05                  	CMP SI, 5
+    51 0000007F 7340                    	JAE error
+    52                                  	
+    53 00000081 B400                    	MOV AH,0x00
+    54 00000083 B200                    	MOV DL,0x00
+    55 00000085 CD13                    	INT 0x13
+    56 00000087 EBE3                    	JMP retry
+    57                                  
+    58                                  next:
+    59 00000089 8CC0                    	MOV AX, ES
+    60 0000008B 83C020                  	ADD AX, 0x0020
+    61 0000008E 8EC0                    	MOV ES, AX
+    62 00000090 80C101                  	ADD CL, 1
+    63 00000093 80F912                  	CMP CL, 18
+    64 00000096 76D1                    	JBE readloop
+    65                                  	
+    66 00000098 B101                    	MOV CL, 1
+    67 0000009A 80C601                  	ADD DH, 1
+    68 0000009D 80FE02                  	CMP DH, 2
+    69 000000A0 72C7                    	JB readloop
+    70                                  		
+    71 000000A2 B600                    	MOV DH, 0
+    72 000000A4 80C501                  	ADD CH, 1
+    73 000000A7 80FD0A                  	CMP CH, CYLS
+    74 000000AA 72BD                    	JB readloop
+    75                                  	
+    76 000000AC 882EF00F                	MOV		[0x0ff0],CH
+    77 000000B0 E9(00C2)                	JMP		0xc200
+    78                                  	
+    79                                  
+    80                                  putloop:
+    81 000000B3 AC                      	LODSB            ; 从SI指向的地址加载字节到AL，并将SI增加1
+    82 000000B4 3C00                    	CMP AL, 0        ; 比较AL和0
+    83 000000B6 740C                    	JE fin           ; 如果AL为0，跳转到fin标签，结束循环
+    84 000000B8 B40E                    	MOV AH, 0x0e     ; 设置BIOS视频中断功能号（显示字符）
+    85 000000BA BB0F00                  	MOV BX, 15       ; 设置字符颜色（白色）
+    86 000000BD CD10                    	INT 0x10         ; 调用BIOS中断显示字符
+    87 000000BF EBF2                    	JMP putloop      ; 跳转回putloop标签，继续循环
+    88                                  
+    89                                  error:
+    90 000000C1 BE[C700]                	MOV	SI,msg
+    91                                  
+    92                                  
+    93                                  fin:
+    94 000000C4 F4                      	HLT              ; 停止CPU
+    95 000000C5 EBFD                    	JMP fin          ; 无限循环，保持CPU停止状态
+    96                                  
+    97                                  
+    98                                  
+    99                                  msg:
+   100 000000C7 0A0A                    	DB 0x0a, 0x0a    ; 定义两个换行符（ASCII码0x0A）
+   101 000000C9 6C6F6164206572726F-     	DB "load error" ; 定义字符串 "hello, world"
+   101 000000D2 72                 
+   102 000000D3 0A                      	DB 0x0a          ; 定义一个换行符（ASCII码0x0A）
+   103 000000D4 00                      	DB 0             ; 定义字符串结束符（ASCII码0x00）
+   104                                  
+   105 000000D5 <res 129h>              RESB 0x1FE-($-$$)  ; 填充到510字节，使整个引导扇区达到510字节
+   105          ******************       warning: uninitialized space declared in .text section: zeroing [-w+zeroing]
+   106 000001FE 55                      DB 0x55             ; 引导签名（低字节）
+   107 000001FF AA                      DB 0xaa             ; 引导签名（高字节）
