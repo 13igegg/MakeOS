@@ -1,0 +1,38 @@
+CC = x86_64-elf-gcc
+LD = x86_64-elf-ld
+CFLAGS = -m32 -fno-pic -nostdlib -nostdinc -fno-builtin -fno-stack-protector -I./src
+
+ipl.bin: ipl.nas
+	nasm -f bin -o ipl.bin -l ipl.lst ipl.nas
+
+asmhead.bin: asmhead.nas
+	nasm -f bin -o asmhead.bin -l asmhead.lst asmhead.nas
+
+bootpack.o: bootpack.c
+	$(CC) $(CFLAGS) -c bootpack.c -o bootpack.o
+	
+bootpack.bin:bootpack.o link.ld
+	$(LD) -m elf_i386 -T link.ld -o bootpack.bin bootpack.o
+
+haribote.sys: asmhead.bin bootpack.bin
+	cat asmhead.bin bootpack.bin > haribote.sys
+#haribote.sys: haribote.nas
+#	nasm -f bin haribote.nas -o haribote.sys -l haribote.lst
+	
+haribote.img: ipl.bin haribote.sys
+	dd if=/dev/zero of=haribote.img bs=512 count=2880
+	mformat -i haribote.img -f 1440 ::
+	dd if=ipl.bin of=haribote.img conv=notrunc bs=512 count=1
+	mcopy -i haribote.img haribote.sys ::
+
+run: haribote.img
+	qemu-system-i386 -fda haribote.img
+	
+clean:
+	rm -f *.bin
+	rm *.lst
+	rm *.img
+	rm haribote.sys
+
+
+
